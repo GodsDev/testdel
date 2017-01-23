@@ -1,0 +1,1166 @@
+FORMAT: 1A
+
+# Content Vendor API (v1.9)
+
+API for O2 Active portal content providers. The purpose of this API is for the O2 Active portal to obtain complete
+metadata for the need of presentation, propagation and selling of the content on the portal. The term "metadata" is
+meant to be text and visual information about items, categorization, price, etc. The term "item" is meant to be a game,
+audiobook, magazine, song in MP3 format, etc.
+
+The API is based on the principles of REST architecture. The API must be published by the content provider. The URL at
+which the API will be available is up to the provider. The only requirement is that it must contain API version in the
+path. For example: https://provider-url/api/1.0/
+
+In case one provider offers more content types, each content type will need to have its own URL. For example:
+https://provider-url/api/1.0/books/
+
+Data will be transferred in JSON format (`Content-Type: application/json`) in UTF-8 encoding. It is possible to use
+standard gzip compression method (`Content-Encoding: gzip`).
+
+If an end-point has no parameters that can modify the result, we advise the provider to prepare static metadata 
+beforehand in appropriate time intervals.
+
+The current version of this document is available at http://docs.contentapi17.apiary.io/
+
+## Security requirements
+
+Access to API should be secured by HTTP Basic authentication (user, password) together with HTTPS transfer protocol.
+Certificate used for HTTPS connection should be valid.
+
+Security of content delivery will be based on HTTPS and time limited access token. See next chapter for detail
+information.
+
+Audio files (used for previews of audiobooks) should be transferred over HTTPS protocol. Theirs URLs will be used
+directly on web portal. On the other hand, image files require no secure connection. They will be downloaded, resized
+and served by the portal itself.
+
+## Content delivery
+
+Purchased content will be downloaded directly from delivery server of content provider. Request for downloading will be
+authorized by time limited access token. Generating and validating this token will be completely up to content provider.
+
+Basic steps are:
+
+1. User clicks the download button on O2 web page.
+2. Client calls: https://www.o2active.cz/download/123
+    1. O2 server verifies user’s session.
+    2. O2 server verifies that content is valid (exists and is in user’s library).
+    3. O2 server calls API: https://provider-url/api/1.0/download-url?id=123&user_id=XYZ
+        1. Delivery server verifies that content is valid.
+        2. Delivery server returns its own URL with token: https://provider-url/delivery/?id=123&user_id=XYZ&token=ABC
+    6. O2 server returns redirect to the client.
+3. Client calls: https://provider-url/delivery/?id=123&user_id=XYZ&token=ABC
+    1. Delivery server verifies validity and expiration of token.
+    2. Delivery server starts delivering data.
+    
+### Error handling
+
+If delivery server can't fulfill the request for downloading the content in step 2.3.1, it will return redirect to
+https://www.o2active.cz/chyba-stahovani/xyz
+where `xyz` is an standard HTTP response status code. Status code should be a number from 400 to 599. 
+  
+### Downloading stability
+
+It is highly recommended that delivery server will support partial file transfer managed by HTTP header `Range`. This is
+important especially for downloading files to mobile devices. Mobile connection can be broken easily. Partial file 
+transfer will allow to reconnect and continue downloading. 
+
+### Implementation tips
+
+Token can be randomly generated and stored in a database together with an expiration time. As soon as file is fully 
+downloaded, token will be deleted from database.
+
+Another possibility is to add additional parameter `timestamp` to the URL and to generate token as a signature - hash of
+all other parameters and private salt.
+
+Token expiration should be long enough to download whole file. If delivery server will support partial file transfer
+we suggest shifting expiration time with each usage of the token (up to final expiration time). For example expiration 
+for the first access will be 5 minutes. This expiration can be shifted up to 15 minutes by additional requests with
+`Range` HTTP header.
+
+### Other notes
+
+All identifiers has `string` format. Only ascii characters are allowed. Length limit for identifiers is 100 characters.  
+
+Parameters that aren't required can be omitted completely. It isn't necessary to send `null` or empty arrays. Data size
+will be smaller and parsing faster.
+
+## Document history
+
+ Version  | Date       | Description
+---------:|:-----------|:-------------------------------------------
+      1.0 | 2016-08-08 | Initial document release.
+    1.0.1 | 2016-08-12 | Parameter Item.categories is optional.<br>Parameter user_id in /library/items end-point is optional.
+      1.1 | 2016-08-23 | Added Item.platforms parameter.
+    1.1.1 | 2016-08-27 | Security requirements for media files.<br>Added notes about identifiers limitations and optional parameters.
+      1.2 | 2016-08-30 | Removed end-point /users.<br>Parameter `user_id` is required in /library/items again.<br>Renamed parameter `Item.needs_wifi` to `has_wrapper`.
+    1.2.1 | 2016-09-01 | Changed Item.bundles to Item.bundle_items. 
+      1.3 | 2016-09-02 | Removed lots of unneeded (and not used) Bundle parameters.
+      1.4 | 2016-09-04 | Added parameter `order_id` to library API.
+      1.5 | 2016-09-05 | Added parameter `Item.app_markets`.
+    1.5.1 | 2016-09-11 | Added parameter `Item.trade_number`.
+      1.6 | 2016-09-15 | Changed parameters of /download-url end-point.
+    1.6.1 | 2016-09-16 | Added parameter `device_id` to /library/items POST request.
+    1.6.2 | 2016-09-19 | Added parameter `Item.sorted_categories`. Added parameter `format` to /download-url endpoint
+      1.7 | 2016-10-17 | Added parameter `cancel_order` to DELETE /library/items endpoint.<br>Added DELETE /library/subscriptions.
+    1.7.1 | 2016-10-20 | Added parameter `purchased_from` to GET /library/items endpoint.
+    1.7.2 | 2016-12-12 | Added parameter `channel` to POST /library/items endpoint.
+      1.8 | 2016-12-19 | Added parameters `Item.review`, `Item.tips`, `Item.video_url`.
+      1.9 | 2017-01-19 | Added end-point /recommended.
+
+# Data Structures
+
+## Category
++ `id`: `100` (required) - Category identifier.
++ `title`: `Sci–Fi a fantasy` (required) - Category name.
++ `parent_id`: `110` - Identifier of the parent category. Parent category cannot then have `parent_id`.
++ `recommended`: `false` (boolean) - Whether it is the "Recommended" category.
++ `top`: `false` (boolean) - Whether it is the "Top" category.
+
+## Item
++ `id`: `301` (required) - Item identifier.
++ `title`: `The Lord of the Rings: The Fellowship of the Ring` (required) - Item title.
++ `cover_url`: `http://provider.com/images/301.jpg` (required) - Cover image URL.
+
+   The largest size that is available. Web catalog will automatically resize images for its needs. 
+
++ `price`: `149` (number, required) - Actual retail item price (with VAT).
+
+    Value `0` means that item can be purchased for free. Value `-1` means that only subscription can be purchased.
+    Subscriptions are required in this case.
+
++ `common_price`: `199` (number) - Retail item price before discount (with VAT).
+
+    If common price is available, there will be two prices visible on web catalog: common price (stroked out) 
+    together with actual discount price. Common price should be higher than actual price. 
+
++ `subscriptions`: `701`, `702` (array[string]) - List of available subscriptions.
++ `categories`: `101`, `102` (array[string]) - List of category identifiers that the item belongs to.
+
+    Categories are not required, but be careful. Items that don't belong to any category will be reachable only in
+    search results.
+    
++ `sorted_categories` (array[SortedCategory]) - List of category identifiers, together with sorting information.
+
+    This parameter allows to define order of the item while displaying items in category. It is possible to use 
+    both `categories` and `sorted_categories` parameter. Set of categories in these parameters should be disjoint. 
+    Position information (parameter `order`) will override default order of items in listing.
+
++ `bundle_items`: `601`, `602` (array[string]) - List of items that belongs to this bundle.
++ `description`: `<p>Description text</p>` - Long text description.
+
+    Text can (but does not need to) contain formatting using tags `<p>`, `<br>`, `<strong>`, `<b>`, `<em>`, `<i>`, `ol`,
+    `ul` and `li`. All other HTML tags will be cleared during import.
+
++ `review`:  `<p>Review text</p>` - Editor's review.
+
+    Text can (but does not need to) contain formatting using tags `<p>`, `<br>`, `<strong>`, `<b>`, `<em>`, `<i>`, `ol`,
+    `ul` and `li`. All other HTML tags will be cleared during import.
+
++ `tips`:  `<p>Tips & tricks text</p>` - Tips & tricks text.
+
+    Text can (but does not need to) contain formatting using tags `<p>`, `<br>`, `<strong>`, `<b>`, `<em>`, `<i>`, `ol`,
+    `ul` and `li`. All other HTML tags will be cleared during import.
+
++ `sample`: `true` (boolean) - Whether sample of content is available (part of a book, part of an audiobook recording).
+
+    Default value is `false`.
+
++ `sample_url`: `http://provider.com/samples/301.mp3` - Public URL of content sample, if available.
++ `video_url`: `https://www.youtube.com/watch?v=nHV9WWAweuA` - URL to YouTube video.
++ `state`: `available` (enum) - Actual state of the item.
+
+    Controls listing on web catalogue and availability for purchasing and downloading. Following table contains allowed
+    state values and their impact to the item. 
+
+    | State         | Category&nbsp; | Search&nbsp; | Detail&nbsp; | Purchase&nbsp; | Download&nbsp; |
+    |:--------------|----------|--------|--------|----------|----------|
+    | `hidden`      |          |        |        |          |          |
+    | `public`      | yes      | yes    | yes    |          |          |
+    | `pre_order`   | yes      | yes    | yes    | yes      | may 1)   |
+    | `available`   | yes      | yes    | yes    | yes      | yes      |
+    | `unavailable` |          | yes    | yes    |          | yes      |
+    | `removed`     |          |        | yes    |          | yes      |
+    | `discarded`   |          |        |        |          |          |
+    
+    1) Availability of item download in `pre-order` state depends on content type. 
+
+    Columns explanation:
+    * Category - Item is visible in category listing.
+    * Search - Item is visible in search results.
+    * Detail - Detail page of the item can by displayed using direct URL address.
+    * Purchase - Item can be purchased.
+    * Download - Purchased item can be downloaded.
+
+    Default value is `available`. 
+
++ `availability` (Availability) - Dates and times that control changes of item state in the future.
+
+    None of parameters in Availability class is required. Only relevant parameters should be sent.
+
++ `modified_time`: `2016-02-16T14:30:15+01` - Date and time of the last update of item metadata.
+
+    If available, this parameter will be used for filtering items during import. Not modified items will be skipped. 
+    Note, that this date should be updated with every change of any item parameter. Including connection to categories, 
+    changes of images, audio tracks, etc. 
+
++ `data_modified_time`: `2016-02-16T14:30:15+01` - Date and time of last update of binary downloadable content.
+
+    Should be used after pre-order (when full item is available for downloading) or if binary data was patched.
+    Users will be notified to re-download this item.
+
++ `authors`: `J. R. R. Tolkien` (array[string]) - Array of authors.
++ `publisher`: `Publisher Inc.` - Publisher name.
++ `publish_date`: `2015-02-17` - Publish date in ISO format.
++ `trade_number`: `978-80-7254-773-9` - Unique article number.
+
+    In case of books, it is ISBN (together with separators). EAN otherwise.
+
++ `series_id`: `201` - Series identifier.
++ `narrators`: `Martin Stránský`, `Vojtěch Dyk` (array[string]) - Array of narrators.
++ `length`: `6000` (number) - Audiobook length in seconds, number of pages of a magazine.
++ `images` (array[Image]) - List of images. Typically screen-shots from a game.
++ `tracks` (array[Track]) - List of audio tracks in the playback order. 
+    
+    Required for audiobooks and albums. If possible, track number should not by part of titles.
+    
++ `device_ids`: `401`, `402` (array[string]) - List of User-Agents, for which the content item is supported. Parameter will be used for games.
++ `has_wrapper`: `false` (boolean) - Whether game has an wrapper that will download game content after initial application launch.
++ `languages`: `cs`, `en` - Array of standard 2-characters language codes.
++ `periodical`: `National Geographic` - Periodical name (name of magazine without issue number).
++ `parent_id`: `302` - Identifier of the parent item. Parameter will be used for magazine attachments.
++ `mutation_parent_id`: `302` - Identifier of the parent item. Parameter will be used for magazine regional mutations.
++ `mutations_allowed`: `2` (number) - Number of allowed magazine regional mutations. -1 means that number of mutations is not restricted.
++ `platforms`: `ios`, `android` (array[string]) - List of supported platforms.
+
+    Allowed values are:
+    
+    - `ios` - iOS of any version. 
+    - `android` - Android of any version.
+    - `wp` - Windows Phone of any version, Windows 10 Mobile.
+    - `blackberry` - BlackBerry of any version (native application format).
+    - `symbian` - Symbian of any version (native application format).
+    - `j2me` - Java application that uses Mobile Information Device Profile.
+    
++ `app_markets` (array[AppMarket]) - List of supported application markets.
+
+## Bundle
++ `id`: `601` (required) - Bundle identifier.
++ `title`: `For house and garden` (required) - Item name.
++ `cover_url`: `http://provider.com/images/601.jpg` (required) - Cover image URL.
+
+   The largest size that is available. Web catalog will automatically resize images for its needs. 
+
++ `price`: `149` (number, required) - Actual retail item price (with VAT).
+
+    Value `0` means that item can be purchased for free. Value `-1` means that only subscription can be purchased.
+    Subscriptions are required in this case.
+
++ `common_price`: `199` (number) - Retail item price before discount (with VAT).
+
+    If common price is available, there will be two prices visible on web catalog: common price (stroked out) 
+    together with actual discount price. Common price should be higher than actual price. 
+
++ `subscriptions`: `701`, `702` (array[string]) - List of available subscriptions.
++ `description`: `<p>Item description</p>` - Long text description.
+
+    Description can (but does not need to) contain formatting using tags `<p>`, `<strong>`, `<b>`, `<em>`, `<i>` and `<br>`.
+    All other HTML tags will be cleared during import.
+
++ `state`: `available` (enum) - Actual state of the item.
+
+    Controls listing on web catalogue and availability for purchasing and downloading. Following table contains allowed
+    state values and their impact to the item. 
+
+    | State         | Category&nbsp; | Search&nbsp; | Detail&nbsp; | Purchase&nbsp; | Download&nbsp; |
+    |:--------------|----------|--------|--------|----------|----------|
+    | `hidden`      |          |        |        |          |          |
+    | `public`      | yes      | yes    | yes    |          |          |
+    | `pre_order`   | yes      | yes    | yes    | yes      | may 1)   |
+    | `available`   | yes      | yes    | yes    | yes      | yes      |
+    | `unavailable` |          | yes    | yes    |          | yes      |
+    | `removed`     |          |        | yes    |          | yes      |
+    | `discarded`   |          |        |        |          |          |
+    
+    1) Availability of item download in `pre-order` state depends on content type. 
+
+    Columns explanation:
+    * Category - Item is visible in category listing.
+    * Search - Item is visible in search results.
+    * Detail - Detail page of the item can by displayed using direct URL address.
+    * Purchase - Item can be purchased.
+    * Download - Purchased item can be downloaded.
+
+    Default value is `available`. 
+
++ `availability` (Availability) - Dates and times that control changes of item state in the future.
+
+    None of parameters in Availability class is required. Only relevant parameters should be sent.
+
++ `modified_time`: `2016-02-16T14:30:15+01` - Date and time of the last update of item metadata.
+
+    If available, this parameter will be used for filtering items during import. Not modified items will be skipped. 
+    Note, that this date should be updated with every change of any item parameter. Including connection to categories, 
+    changes of images, audio tracks, etc. 
+   
++ `items`: `601`, `602` (array[string]) - List of items that belongs to this bundle.
+
+## SortedCategory
++ `category_id`: `100` (required) - Category identifier.
++ `order`: `1` (number) - Represents order of the item while displaying items in category.
+
+## Availability
++ `public_time`: `2015-02-16T00:00:00+01` - Date and time when item state will be changed to `public`.
+
+    For optimization reasons, this time should be always at midnight.
+
++ `pre_order_time`: `2015-04-16T14:00:00+01` - Date and time when item state will be changed to `pre-order`.
++ `available_time`: `2015-05-16T14:00:00+01` - Date and time when item state will be changed to `available`.
++ `unavailable_time`: `2016-03-01T00:00:00+01` - Date and time when item state will be changed to `unavailable`.
+
+    For optimization reasons, this time should be always at midnight. 
+
++ `remove_time`: `2017-01-01T00:00:00+01` - Date and time when item state will be changed to `removed`.
++ `discard_time`: `2018-01-01T00:00:00+01` - Date and time when item state will be changed to `discarded`.
+
+## Image
++ `url`: `http://provider.com/screenshots/301a.jpg` (required) - Public image URL.
++ `group`: `tablet7` (enum) - Image size group.
+
+    An image can be filed into a group, for which the image is designated. If this parameter is not specified, the image 
+    is without a specific designation.
+
+    Allowed values are:
+
+    - `icon` - Square image with application/game icon (PNG with aplha channel if needed). 
+    - `legacy` - Application screen-shot on legacy phone. Typically Symbian OS with resolution up to 240x320 px.
+    - `phone` - Application screen-shot on phone. Typically with resolution 480x800 px.
+    - `tablet7` - Application screen-shot on 7" tablet. Typically with resolution 720x1280 px.
+    - `tablet10` - Application screen-shot on 10" tablet. Typically with resolution higher than 720x1280 px.
+    
+    It is important to change URL addresses with every change of the image. This can be done by adding URL parameter
+    with image version, image hash or at least file size.
+ 
+## Track
++ `id`: `501` (required) - Track identifier.
++ `title`: `Chapter 1 - A Long-expected Party` (required) - Audio track name.
++ `length`: `600` (number, required) - Length of the track in seconds.
++ `disc`: `1` (number, required) - Disc number.
+
+## Subscription
++ `id`: `701` (required) - Subscription identifier.
++ `title`: `National Geographic` (required) - Subscription title.
++ `months`: 12 (number, required) - Subscription duration measured in months.
+
+    Value lower or equal than 0 means that duration of the subscription is unlimited.
+
++ `price`: `900` (number, required) - Retail price (with VAT).
++ `interval`: `none` (enum, required) - Interval for charging.
+
+    Allowed values are:
+        
+    - `none` - Fixed one-time price.  
+    - `month` - User will be charged monthly. 
+    - `year` - User will be charged yearly.
+    
+## AppMarket
++ `market`: `android` (enum, required) - Market type.
+
+    Possible values are:
+
+    - `ios` - Apple App Store.
+    - `android` - Google Play Store.   
+    - `wp` - Windows Store.   
+    - `blackberry` - BlackBerry World.
+    - `symbian` - Symbian App Store.
+    
++ `type`: `universal` (enum) - Application type according to a target device. Default value is `universal`.
+  
+    Possible values are:
+  
+    - `universal` - Universal application for phones and tablets.
+    - `phone` - Application for phones, without tablets support.
+    - `tablet` - Application for tablets, without phones support.
+    
++ `app_id`: `cz.o2.domobilu` - Application identifier in the store.
+  
+    If available, it will be used to directly open store detail page in O2 Active mobile application.
+    
++ `url`: `https://play.google.com/store/apps/details?id=cz.o2.domobilu` (required) - URL of detail page in the store.
+
+## Series
++ `id`: `201` (required) - Series identifier.
++ `title`: `The Lord of the Rings` (required) - Series title.
+
+## Device
++ `id`: `401` (number, required) - Device identifier.
++ `user_agent`: `Mozilla/5.0 (Linux; Android 5.0.2; Nexus 7 Build/LRX22G)` - User-Agent HTTP header.
+
+    May contain wildcard character `%`.
+
++ `brand`: `Samsung` - Device manufacturer.
++ `model`: `Galaxy S7 Edge` - Device model.
+
+## User
++ `user_id`: `JksoD274jD9` (required) - Identifier of O2 customer.
++ `registered_time`: `2015-02-16T14:45:03+01` (required) - Date and time of user registration.
+
+## LibraryItem
++ `item_id`: `301` (required) - Item identifier.
++ `purchased_time`: `2015-02-16T14:45:03+01` (required) - Date and time of purchase in ISO format.
++ `order_id`: `4bbf083d-b412-4884-b40e-166c68eecfd4` (required) - Identifier of the order.
+
+## LibrarySubscription
++ `subscription_id`: `701` (required) - Subscription identifier.
++ `purchased_time`: `2015-02-16T14:45:03+01` (required) - Date and time of purchase in ISO format.
++ `order_id`: `4bbf083d-b412-4884-b40e-166c68eecfd4` (required) - Identifier of the order.
+
+## RecommendedItem
++ `item_id`: `301` (required) - Item identifier.
+
+## Error
++ `code`: `404` (required) - Internal error code. Does not need to match HTTP status code of the response.
++ `message`: `Item not found: 301` (required) - Message with description of the error (for programmer).
+
+
+# Group Metadata
+## Categories [/categories]
+
+### List of categories [GET]
+
+List of all categories (genres). The list must contain at least one category. Categories may contain maximum one level
+of subcategories.
+
++ Request
+    + Headers
+    
+            Accept: application/json
+
++ Response 200 (application/json)
+    + Attributes (array[Category])
+    + Body
+    
+            [
+                {
+                    "id": "101",
+                    "title": "Category name 1",
+                    "recommended": true
+                },
+                {
+                    "id": "102",
+                    "title": "Category name 2",
+                    "top": true
+                },
+                {
+                    "id": "103",
+                    "title": "Category name 3"
+                },
+                {
+                    "id": "103a",
+                    "title": "Subcategory 3A",
+                    "parent_id": "c"
+                }, {
+                    "id": "103b",
+                    "title": "Subcategory 3B",
+                    "parent_id": "c"
+                }
+            ]
+
+
+## Items [/items{?modified_from}]
+
+### List of items [GET]
+
+Returns the list of items. Items shouldn't be deleted between two calls of this end-point. If there is a need
+for item removal, its `state` can be changed to appropriate value.
+
+This list does't contain bundles.
+
++ Parameters
+    + modified_from: `2016-02-16T14:30:15+01` - API will return only items modified after given date and time.
+    
+        This parameter can be ignored in two cases:<br>
+        - Content provider doesn't support modification time of items.<br>
+        - Or content provider decide to prepare list of all items as statically pre-generated file (for performance reasons). 
+
++ Request
+    + Headers
+    
+            Accept: application/json
+
++ Response 200 (application/json)
+    + Attributes (array[Item])
+    + Body
+    
+            [
+                {
+                    "id": "301",
+                    "title": "The Lord of the Rings: The Fellowship of the Ring",
+                    "cover_ul": "http://provider.com/images/301.jpg",
+                    "price": 149,
+                    "categories": ["101", "102"],
+                    "description": "<p>Long item description. May contain <strong>bold</strong> and <em>italic</em> text.</p>",
+                    "sample": true,
+                    "sample_url": "http://provider.com/samples/301.mp3",
+                    "availability" : {
+                        "pre_order_time": "2015-04-16T14:00:00+01",
+                        "available_time": "2015-06-16T14:00:00+01"
+                    },
+                    "authors": ["J. R. R. Tolkien"],
+                    "publisher": "Publisher Inc.",
+                    "publish_date": "2015-02-17",
+                    "series_id": "201",
+                    "narrators": ["Martin Stránský", "Vojtěch Dyk"],
+                    "length": 6000,
+                    "tracks": [{
+                        "id": "501",
+                        "title": "Chapter 1 - A Long-expected Party, part one",
+                        "length": 600,
+                        "disc": 1
+                    },
+                    {
+                        "id": "502",
+                        "title": "Chapter 1 - A Long-expected Party, part two",
+                        "length": 630,
+                        "disc": 1
+                    }]
+                }
+            ]
+
++ Response 200 (application/json)
+    
+        [
+            {
+                "id": "301",
+                "title": "Cut the Rope",
+                "cover_ul": "http://provider.com/images/301.jpg",
+                "price": 49,
+                "categories": ["101", "102"],
+                "description": "<p>Long item description. May contain <strong>bold</strong> and <em>italic</em> text.</p>",
+                "availability" : {
+                    "remove_time": "2017-01-01T00:00:00+01",
+                    "discard_time": "2018-01-01T00:00:00+01"
+                },
+                "publisher": "ZeptoLabs",
+                "language": ["cs", "en"],
+                "has_wrapper": true,
+                "images": [{
+                    "url": "http://provider.com/screenshots/301a.jpg",
+                    "group": "phone"
+                },
+                {
+                    "url": "http://provider.com/screenshots/301b.jpg",
+                    "group": "tablet7"
+                }],
+                "device_ids": ["401", "402"],
+                "platforms": ["android"]
+            }
+        ]
+
++ Response 200 (application/json)
+
+        [
+            {
+                "id": "301",
+                "title": "MF DNES - 2.5.2016",
+                "cover_ul": "http://provider.com/images/301.jpg",
+                "price": 15,
+                "subscriptions": ["701", "702"],
+                "categories": ["101", "102"],
+                "description": "<p>Long item description. May contain <strong>bold</strong> and <em>italic</em> text.</p>",
+                "modified_time": "2016-02-16T14:30:15+01",
+                "publisher": "MAFRA, a.s.",
+                "publish_date": "2016-05-02",
+                "length": 22,
+                "mutations_allowed": 2
+            }
+        ]
+
+
+## Recommended [/recommended]
+
+This is an alternative end-point for providing list of recommended items. In some cases it may be easier for content
+provider to send one list instead of including recommended category in item detail.
+
+### List of recommended items [GET]
+
+List of all recommended items. Order of items in this list is relevant.
+
++ Request
+    + Headers
+
+            Accept: application/json
+
++ Response 200 (application/json)
+    + Attributes (array[RecommendedItem])
+
+
+## Series [/series]
+
+Series is a group of items. For example it is a name of a book trilogy.
+
+If content provider doesn't support series, this end-point doesn't need to be implemented.
+
+### List of series [GET]
+
+Complete list of series.
+
++ Request
+    + Headers
+    
+            Accept: application/json
+
++ Response 200 (application/json)
+    + Attributes (array[Series])
+
+
+## Bundles [/bundles]
+
+Bundles are regular items that hold couple of another items. If user purchase a bundle, all items included in that
+bundle will be purchased. Bundle can be purchased with fixed price or with subscription.
+
+If content provider doesn't support bundles, this end-point doesn't need to be implemented.
+
+### List of bundles [GET]
+
+Complete list of bundles.
+
++ Request
+    + Headers
+    
+            Accept: application/json
+
++ Response 200 (application/json)
+    + Attributes (array[Bundle])
+    + Body
+
+            [
+                {
+                    "id": "601",
+                    "title": "For house and garden",
+                    "cover_ul": "http://provider.com/images/601.jpg",
+                    "price": -1,
+                    "common_price": 99,
+                    "description": "<p>Long item description. May contain <strong>bold</strong> and <em>italic</em> text.</p>",
+                    "subscriptions": [
+                        {
+                            "month": -1,
+                            "price": 49,
+                            "interval": "month"
+                        }
+                    ],
+                    "items": ["301", "302", "303"]
+                }
+            ]
+
+
+## Subscriptions [/subscriptions]
+
+If content provider doesn't support subscriptions, this end-point doesn't need to be implemented.
+
+### List of subscriptions [GET]
+
+Complete list of subscriptions for all items.
+
++ Request
+    + Headers
+    
+            Accept: application/json
+
++ Response 200 (application/json)
+    + Attributes (array[Subscription])
+    + Body
+
+            [
+                {
+                    "id": "701",
+                    "title": "National Geographic 6 months",
+                    "months": 6,
+                    "price": 900,
+                    "interval": "none",
+                },
+                {
+                    "id": "702",
+                    "title": "National Geographic 1 year",
+                    "months": 12,
+                    "price": 1500,
+                    "interval": "none",
+                },
+                {
+                    "id": "702",
+                    "title": "National Geographic Unlimited",
+                    "months": -1,
+                    "price": 130,
+                    "interval": "monthly",
+                }
+            ]
+
+
+## Devices [/devices]
+
+### List of devices [GET]
+
+List of devices identified by User-Agent HTTP header. This API will be used only for games.
+
+Order of records in this list is relevant for proper device detection. Records will be processed from the first to the 
+last one.
+
++ Request
+    + Headers
+    
+            Accept: application/json
+
++ Response 200 (application/json)
+    + Attributes (array[Device])
+    + Body
+
+            [
+                {
+                    "id": 401,
+                    "user_agent": "*iPhone; CPU iPhone OS * like Mac OS X*",
+                    "brand": "Apple",
+                    "model": "iPhone"
+                },
+                {
+                    "id": 402,
+                    "user_agent": "*Android * Nexus 7*",
+                    "brand": "Asus",
+                    "model": "Nexus 7"
+                }
+            ]
+
+
+# Group Library
+
+Users (O2 customers) are identified by using an identifier, which is anonymous from the content provider's point of
+view. Identifier is a string with maximum length of 32 characters.
+
+## Items library [/library/items{?user_id,purchased_from,item_id,cancel_order}]
+
+### List of items [GET]
+
+List of purchased items filtered by specified user.
+
++ Parameters
+    + user_id: `JksoD274jD9` (required) - Identifier of O2 customer.
+    + purchased_from: `2016-10-01T14:45:03+01` - Date and time used for filtering the result.
+        
+        If specified, only items purchased from this time can be returned. This parameter is used for optimisations
+        reasons and can be ignored.
+
++ Request
+    + Headers
+
+            Accept: application/json
+
++ Response 200 (application/json)
+    + Attributes (array[LibraryItem])
+    + Body
+
+            [
+                {
+                    "item_id": "301",
+                    "purchased_time": "2015-02-16T14:45:03+01",
+                    "order_id": "4bbf083d-b412-4884-b40e-166c68eecfd4"
+                }
+            ]
+
++ Response 400 (application/json)
+    + Attributes (object)
+        + error (required, Error)
+
+    + Body
+
+            {
+                "error": {
+                    "code": 400,
+                    "message": "Missing parameter: user_id"
+                }
+            }
+
++ Response 404 (application/json)
+
+        {
+            "error": {
+                "code": 404,
+                "message": "User not found: JksoD274jD9"
+            }
+        }
+
+### Add an item [POST]
+
+Inserts an item or bundle of items into user's library. The purchase of the item takes place on the portal. Content 
+provider is being notified using this end-point that the purchase did take place.
+
+Request contains parameter `order_id`. This identifier should be stored and returned back in `GET` request. Value of
+this parameter is limited to 36 ASCII characters.
+
+Parameter `device_id` is optional and will be sent only in case of games.
+
+Response contains list of inserted items. This list has:
+
+- one item - if exact item was requested to insert
+- more items - if a bundle was requested to insert
+
+In case user's account does not exists yet, it must be created automatically.
+
++ Request (application/x-www-form-urlencoded)
+    + Attributes
+        + user_id: `JksoD274jD9` (required) - Identifier of O2 customer.
+        + item_id: `301` (required) - Item or bundle identifier.
+        + order_id: `4bbf083d-b412-4884-b40e-166c68eecfd4` (required) - Order identifier.
+        + device_id: `401` - Identifier of device.
+        + channel: `web` (enum) - Purchase channel.
+
+            Possible values are:
+            - `web` - Responsive web front-end.
+            - `sms` - SMS message.
+
+    + Headers
+
+            Accept: application/json
+
+    + Body
+    
+            user_id=JksoD274jD9&item_id=301
+
+
++ Response 200 (application/json)
+    + Attributes (object)
+        + user (User)
+        + library_items (array[LibraryItem])
+
+    + Body
+
+            {
+                "user": {
+                    "user_id": "JksoD274jD9",
+                    "registered_time": "2015-02-16T14:45:03+01"
+                },
+                "library_items": [
+                    {
+                        "item_id": "301",
+                        "purchased_time": "2015-02-16T14:45:03+01",
+                        "order_id": "4bbf083d-b412-4884-b40e-166c68eecfd4"
+                    }
+                ]
+            }
+
++ Response 400 (application/json)
+    + Attributes (object)
+        + error (required, Error)
+
+    + Body
+
+            {
+                "error": {
+                    "code": 400,
+                    "message": "Missing parameter: item_id"
+                }
+            }
+
++ Response 404 (application/json)
+
+        {
+            "error": {
+                "code": 404,
+                "message": "Item not found: 301"
+            }
+        }
+
+### Delete an item [DELETE]
+
+Removes an item from user's library. This end-point will be used in case order will be cancelled by customer care
+service or if purchasing process failed.   
+
++ Parameters
+    + user_id: `JksoD274jD9` (required) - Identifier of O2 customer.
+    + item_id: `301` (required) - Item identifier.
+    + cancel_order: `0` (number, required) - Whether order transaction should be cancelled.
+    
+        If order transaction is cancelled, this item shouldn't be included in financial report. User didn't pay for
+        this item. In the other case, item will be just removed from user's library and will be included in financial
+        report.<br>
+        <br>
+        Possible values are: 0, 1.
+
++ Request
+    + Headers
+
+            Accept: application/json
+
++ Response 200 (application/json)
+
++ Response 400 (application/json)
+    + Attributes (object)
+        + error (required, Error)
+
+    + Body
+
+            {
+                "error": {
+                    "code": 400,
+                    "message": "Missing parameter: item_id"
+                }
+            }
+
++ Response 404 (application/json)
+
+        {
+            "error": {
+                "code": 404,
+                "message": "Item not found: 301"
+            }
+        }
+
+## Subscriptions library [/library/subscriptions{?user_id,subscription_id,cancel_order}]
+
+### List of subscriptions [GET]
+
+List of purchased subscriptions for the specified user. This API will be used especially for the initial one-time import 
+of data into the portal.
+
++ Parameters
+    + user_id: `JksoD274jD9` (required) - Identifier of O2 customer.
+
++ Request
+    + Headers
+
+            Accept: application/json
+
++ Response 200 (application/json)
+    + Attributes (array[LibrarySubscription])
+    + Body
+
+            [
+                {
+                    "subscription_id": "701",
+                    "purchased_time": "2015-02-16T14:45:03+01",
+                    "order_id": "4bbf083d-b412-4884-b40e-166c68eecfd4"
+                }
+            ]
+
++ Response 400 (application/json)
+    + Attributes (object)
+        + error (required, Error)
+
+    + Body
+
+            {
+                "error": {
+                    "code": 400,
+                    "message": "Missing parameter: user_id"
+                }
+            }
+
++ Response 404 (application/json)
+
+        {
+            "error": {
+                "code": 404,
+                "message": "User not found: JksoD274jD9"
+            }
+        }
+
+### Add a subscription [POST]
+
+Inserts an subscription into user's library. The purchase of the item takes place on the portal. Content provider is 
+being notified using this end-point that the purchase did take place.
+
+Request contains parameter `order_id`. This identifier should be stored and returned back in `GET` request. Moreover, 
+all items added into the library by this subscription, should contain the same order identifier.  
+
+Response contains inserted subscription together with a list of inserted items. This list has:
+
+- one item - if subscription for exact item was requested to insert
+- more items - if subscription for a bundle was requested to insert
+
+In case user's account does not exists yet, it must be created automatically.
+
++ Request (application/x-www-form-urlencoded)
+    + Attributes
+        + user_id: `JksoD274jD9` (required) - Identifier of O2 customer.
+        + subscription_id: `701` (required) - Subscription identifier.
+        + order_id: `4bbf083d-b412-4884-b40e-166c68eecfd4` (required) - Order identifier.
+
+    + Headers
+
+            Accept: application/json
+
+    + Body
+    
+            user_id=JksoD274jD9&item_id=301
+
+
++ Response 200 (application/json)
+    + Attributes (object)
+        + user (User)
+        + library_subscription (LibrarySubscription)
+        + library_items (array[LibraryItem])
+
+    + Body
+
+            {
+                "user": {
+                    "user_id": "JksoD274jD9",
+                    "registered_time": "2015-02-16T14:45:03+01"
+                },
+                "library_subscription": {
+                    "subscription_id": "701",
+                    "purchased_time": "2015-02-16T14:45:03+01",
+                    "order_id": "4bbf083d-b412-4884-b40e-166c68eecfd4"
+                },
+                "library_items": [
+                    {
+                        "item_id": "301",
+                        "purchased_time": "2015-02-16T14:45:03+01",
+                        "order_id": "4bbf083d-b412-4884-b40e-166c68eecfd4"
+                    },
+                    {
+                        "item_id": "302",
+                        "purchased_time": "2015-02-16T14:45:03+01",
+                        "order_id": "4bbf083d-b412-4884-b40e-166c68eecfd4"
+                    }
+                ]
+            }
+
++ Response 400 (application/json)
+    + Attributes (object)
+        + error (required, Error)
+
+    + Body
+
+            {
+                "error": {
+                    "code": 400,
+                    "message": "Missing parameter: subscription_id"
+                }
+            }
+
++ Response 404 (application/json)
+
+        {
+            "error": {
+                "code": 404,
+                "message": "Subscription not found: 701"
+            }
+        }
+
+### Delete an subscription [DELETE]
+
+Removes an subscription from user's library. This end-point will be used in case order will be cancelled by customer care
+service or if purchasing process failed.   
+
++ Parameters
+    + user_id: `JksoD274jD9` (required) - Identifier of O2 customer.
+    + subscription_id: `701` (required) - Subscription identifier.
+    + cancel_order: `0` (number, required) - Whether order transaction should be cancelled.
+    
+        If order transaction is cancelled, this item shouldn't be included in financial report. User didn't pay for
+        this item. In the other case, item will be just removed from user's library and will be included in financial
+        report.<br>
+        <br>
+        Possible values are: 0, 1.
+
++ Request
+    + Headers
+
+            Accept: application/json
+
++ Response 200 (application/json)
+
++ Response 400 (application/json)
+    + Attributes (object)
+        + error (required, Error)
+
+    + Body
+
+            {
+                "error": {
+                    "code": 400,
+                    "message": "Missing parameter: subscription_id"
+                }
+            }
+
++ Response 404 (application/json)
+
+        {
+            "error": {
+                "code": 404,
+                "message": "Subscription not found: 701"
+            }
+        }
+
+## Download [/download-url{?user_id,item_id,track_id,device_id,format}]
+
+### Content download URL [GET]
+
+This API returns a URL that will be used by the specified user to download purchased item directly from the content
+provider. Requested file will be identified by `item_id` or `track_id` (not both).
+
+- `item_id` will be used for an item itself. In case of audiobooks, it means whole audiobook in selected format.
+- `track_id` will be used only for audiobooks. URL to MP3 file of selected track is expected.
+
+Parameter `format` can be used for specifying file format. In case of audiobooks, API should support these values:
+- `mp3` - Whole audiobook in one MP3 file.
+- `zip` - ZIP package of separated files for each audio track. 
+
+Parameter `device_id` is optional and will be sent only in case of games.
+
+If the item is not purchased by the specified user, the response code will be `403 Forbidden`.
+
+If the item is not prepared for delivery yet, it is possible to return code `202 Accepted`. The client will repeat
+the same request after 3 seconds. Number of seconds can be modified (optimized) by HTTP header `Retry-After`. Total 
+time of waiting for regular response shouldn't be greater than 10 seconds.  
+
++ Parameters
+    + user_id: `JksoD274jD9` (required) - Identifier of O2 customer.
+    + item_id: `301` - Identifier of item.
+    + track_id: `301` - Identifier of audiobook track.
+    + device_id: `401` - Identifier of device.
+
++ Request
+    + Headers
+
+            Accept: application/json
+
++ Response 200 (application/json)
+    + Attributes (object)
+        + `download_url`: `http://provider.com/data/301.mp3` - Content download URL.
+
+    + Body
+
+            {
+                "download_url": "http://provider.com/data/301.mp3"
+            }
+
++ Response 400 (application/json)
+    + Attributes (object)
+        + error (required, Error)
+
+    + Body
+
+            {
+                "error": {
+                    "code": 400,
+                    "message": "Missing parameter: item_id"
+                }
+            }
+
++ Response 404 (application/json)
+
+        {
+            "error": {
+                "code": 404,
+                "message": "Item not found: 301"
+            }
+        }
+
++ Response 403 (application/json)
+
+        {
+            "error": {
+                "code": 403,
+                "message": "Item 301 not allowed for user: JksoD274jD9"
+            }
+        }
